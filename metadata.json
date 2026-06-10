@@ -1,0 +1,6 @@
+{
+  "name": "AI投研飞轮平台",
+  "description": "基于AI的海内外工业与行研框架自动生成、Skill原子化拆解、自动化闭环评测与即时研报运营一站式投研管理飞轮系统。",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
