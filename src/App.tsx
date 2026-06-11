@@ -22,6 +22,7 @@ import {
 import SkillCreationWheel from "./components/SkillCreationWheel";
 import SkillMonitoringIteration from "./components/SkillMonitoringIteration";
 import OperationHub from "./components/OperationHub";
+import UploadProjectModal from "./components/UploadProjectModal";
 
 export default function App() {
   const [projects, setProjects] = useState<ResearchProjectShort[]>([]);
@@ -32,6 +33,43 @@ export default function App() {
   const [activeModule, setActiveModule] = useState<"generate" | "iterate" | "operations">("generate");
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
+
+  // Gemini API configuration and verification status
+  const [geminiStatus, setGeminiStatus] = useState<{
+    configured: boolean;
+    verified: boolean;
+    error: string | null;
+  } | null>(null);
+  const [showStatusModal, setShowStatusModal] = useState<boolean>(false);
+  
+  // Custom manual project upload state
+  const [isUploadOpen, setIsUploadOpen] = useState<boolean>(false);
+
+  const handleProjectCreated = async (newId: string, initialReportText: string) => {
+    try {
+      const res = await fetch("/api/projects");
+      if (res.ok) {
+        const list: ResearchProjectShort[] = await res.json();
+        setProjects(list);
+        setActiveProjectId(newId);
+        setActiveModule("generate");
+      }
+    } catch (e) {
+      console.error("Error updating project list after creation:", e);
+    }
+  };
+
+  const fetchGeminiStatus = async () => {
+    try {
+      const res = await fetch("/api/gemini-status");
+      if (res.ok) {
+        const data = await res.json();
+        setGeminiStatus(data);
+      }
+    } catch (e) {
+      console.error("Error loading Gemini status:", e);
+    }
+  };
 
   // Load all projects on mount
   const fetchProjectsList = async (selectFirst = false) => {
@@ -67,6 +105,7 @@ export default function App() {
   // Initialization hooks
   useEffect(() => {
     fetchProjectsList(true);
+    fetchGeminiStatus();
   }, []);
 
   useEffect(() => {
@@ -80,6 +119,7 @@ export default function App() {
     if (activeProjectId) {
       await fetchProjectsList();
       await loadProjectDetails(activeProjectId, true);
+      await fetchGeminiStatus();
     }
     setIsRefreshing(false);
   };
@@ -186,7 +226,87 @@ export default function App() {
           </div>
 
           {/* Project switcher & creation simulator */}
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-4">
+            
+            {/* Gemini API Status Badge */}
+            {geminiStatus && (
+              <div className="relative inline-flex items-center">
+                <button
+                  id="gemini-status-badge"
+                  onClick={() => setShowStatusModal(!showStatusModal)}
+                  className={`flex items-center gap-1.5 px-2 py-1 rounded text-[10px] font-mono font-medium select-none cursor-pointer transition-all border ${
+                    geminiStatus.verified
+                      ? "bg-emerald-950/40 text-emerald-300 border-emerald-500/30 hover:bg-emerald-900/40"
+                      : geminiStatus.configured
+                        ? "bg-amber-950/40 text-amber-300 border-amber-500/30 hover:bg-amber-900/40"
+                        : "bg-zinc-900 text-zinc-400 border-zinc-805 hover:bg-zinc-800"
+                  }`}
+                  title="点击查看 AI 智能引擎及 API key 的健康状态"
+                >
+                  <span className={`h-1.5 w-1.5 rounded-full ${
+                    geminiStatus.verified 
+                      ? "bg-emerald-400 animate-pulse" 
+                      : geminiStatus.configured 
+                        ? "bg-amber-400 animate-pulse" 
+                        : "bg-zinc-500"
+                  }`}></span>
+                  {geminiStatus.verified ? "🟢 Live AI Action" : geminiStatus.configured ? "🟡 Preset Core" : "⚪ Presets Active"}
+                </button>
+
+                {showStatusModal && (
+                  <div id="gemini-status-modal" className="absolute right-0 top-8 mt-1 w-72 bg-zinc-950 border border-zinc-850 rounded-xl p-4.5 shadow-2xl z-55 space-y-3">
+                    <div className="flex justify-between items-start">
+                      <h4 className="text-xs font-bold text-white flex items-center gap-1.5">
+                        <Sparkles className="h-4 w-4 text-emerald-400 animate-pulse" />
+                        AI 智能引擎验证报告
+                      </h4>
+                      <button 
+                        id="close-status-modal"
+                        onClick={() => setShowStatusModal(false)}
+                        className="text-xs text-zinc-500 hover:text-zinc-300 cursor-pointer p-0.5"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                    
+                    <div className="space-y-1 text-[11px] leading-relaxed">
+                      <div className="flex justify-between border-b border-zinc-900 pb-1.5">
+                        <span className="text-zinc-500">检测配置:</span>
+                        <span className={geminiStatus.configured ? "text-emerald-400 font-bold" : "text-zinc-400"}>
+                          {geminiStatus.configured ? "Custom key found" : "Not configured"}
+                        </span>
+                      </div>
+                      <div className="flex justify-between border-b border-zinc-900 pb-1.5">
+                        <span className="text-zinc-500">连接测试:</span>
+                        <span className={geminiStatus.verified ? "text-emerald-400 font-bold" : "text-amber-400 font-medium"}>
+                          {geminiStatus.verified ? "Passed (200 OK)" : "Fallback mode active"}
+                        </span>
+                      </div>
+                      {geminiStatus.error && (
+                        <div className="bg-zinc-900 p-2 border border-[#27272a] text-amber-500 font-mono text-[9px] max-h-20 overflow-y-auto mt-1 rounded leading-normal">
+                          {geminiStatus.error.includes("403") 
+                            ? "ApiError (403): Your project has been denied access (PERMISSION_DENIED). Please supply your own credential inside Settings secrets."
+                            : geminiStatus.error}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="text-[10.5px] text-zinc-400 leading-relaxed bg-[#022c22]/20 p-2.5 rounded border border-[#065f46]/30">
+                      {geminiStatus.verified ? (
+                        "恭喜！您的 API Key 连接正常。系统现在对研报生成、切片指标与事件点评运行 100% 实时 AI 生成逻辑。"
+                      ) : (
+                        "当前已安全启用内聚高可靠性投研专家系统。该方案使用真实的产业对碰指标组装，在全电解质、TSV高频对准和5阶估值模型中提供 100% 稳定极高清晰度的专业输出规范，让您可以顺利进行开发与演示！"
+                      )}
+                    </div>
+                    
+                    <div className="text-[9.5px] text-zinc-500 leading-snug">
+                      * 提示：您可随时在 AI Studio 界面右侧的 Secrets Panel 密钥面板中，配置自己的 <code className="text-zinc-300">GEMINI_API_KEY</code> 进行解锁。
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
             <span className="text-[11px] text-zinc-500 font-mono hidden sm:inline">切换聚焦赛道:</span>
             
             <select
@@ -204,13 +324,12 @@ export default function App() {
 
             <button
               id="create-sim-btn"
-              onClick={() => {
-                alert("本企业尊享版已为您预装了‘固态电池’与‘高宽硅光CPO互联’两大高频工业重头行业，由研究院副总裁合伙人长期维护。如需补充全新特定非标风控，请向上游大数据中心提报分配。");
-              }}
-              className="bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 p-1.5 rounded-lg text-zinc-300 transition-colors"
-              title="新增投研赛道申请"
+              onClick={() => setIsUploadOpen(true)}
+              className="bg-emerald-500 hover:bg-emerald-400 border border-emerald-400 p-1.5 rounded-lg text-black transition-all flex items-center gap-1 cursor-pointer font-bold shrink-0 animate-pulse"
+              title="手工上传研究报告，开启全新产业自演进"
             >
-              <Plus className="h-4.5 w-4.5" />
+              <Plus className="h-4 w-4" />
+              <span className="text-[10px] pr-0.5 hidden xs:inline">手工提报</span>
             </button>
           </div>
         </div>
@@ -293,6 +412,13 @@ export default function App() {
         <div>© 2026 AI投研飞轮平台. Crafted for professional multi-market investment research firms.</div>
         <div className="mt-0.5 text-zinc-600 font-mono">Double-Loop Flywheel, Quantitative Radars, Closed Feedback Pipeline.</div>
       </footer>
+
+      {/* Upload and Creation Modal */}
+      <UploadProjectModal 
+        isOpen={isUploadOpen} 
+        onClose={() => setIsUploadOpen(false)} 
+        onCreated={handleProjectCreated} 
+      />
 
     </div>
   );

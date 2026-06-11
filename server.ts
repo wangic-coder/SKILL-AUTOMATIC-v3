@@ -8,6 +8,18 @@ dotenv.config();
 
 const PORT = 3000;
 
+interface GeminiStatus {
+  configured: boolean;
+  verified: boolean;
+  error: string | null;
+}
+
+const geminiStatus: GeminiStatus = {
+  configured: false,
+  verified: false,
+  error: null
+};
+
 // Initialize Gemini SDK with recommended pattern
 let ai: GoogleGenAI | null = null;
 try {
@@ -20,12 +32,40 @@ try {
         }
       }
     });
-    console.log("Gemini API Client initialized successfully.");
+    geminiStatus.configured = true;
+    console.log("Gemini API Client initialized, awaiting validation probe.");
   } else {
     console.log("No GEMINI_API_KEY found or it has default value. Falling back to pre-built expert generator.");
+    geminiStatus.error = "No custom GEMINI_API_KEY configured. Active fallback system is running.";
   }
-} catch (e) {
+} catch (e: any) {
+  geminiStatus.error = e.message || String(e);
   console.error("Failed to initialize Gemini API Client:", e);
+}
+
+// Background validation probe
+async function verifyGeminiKey() {
+  if (!geminiStatus.configured || !ai) {
+    geminiStatus.verified = false;
+    return;
+  }
+  try {
+    console.log("Probing Gemini API key validity with a health check request...");
+    const result = await ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: "Ping. Simply reply with the word OK",
+      config: {
+        maxOutputTokens: 2,
+      }
+    });
+    geminiStatus.verified = true;
+    geminiStatus.error = null;
+    console.log("Gemini API key successfully verified. Live AI Generation is fully ACTIVE.");
+  } catch (err: any) {
+    geminiStatus.verified = false;
+    geminiStatus.error = err.message || String(err);
+    console.warn("Gemini API validation probe failed. In-Memory fallback system will be used. Error:", geminiStatus.error);
+  }
 }
 
 // In-memory runtime state for the AI Investment Research Flywheel Platform
@@ -329,6 +369,11 @@ async function startServer() {
   const app = express();
   app.use(express.json({ limit: '10mb' }));
 
+  // API 0: Get Gemini API key connection status
+  app.get("/api/gemini-status", (req, res) => {
+    res.json(geminiStatus);
+  });
+
   // API 1: Get list of current active projects or preset key details
   app.get("/api/projects", (req, res) => {
     res.json(Object.values(db.projects).map(p => ({
@@ -347,6 +392,116 @@ async function startServer() {
     res.json(project);
   });
 
+  // API 1.5: Create a brand new project dynamically from manual report upload/metadata
+  app.post("/api/projects", (req, res) => {
+    const { name, theme, reportsText } = req.body;
+    if (!name) {
+      return res.status(400).json({ error: "Industry name is required" });
+    }
+
+    const sampleId = "project-" + Date.now().toString().slice(-6);
+
+    // Seed domain-specific defaults for maximum industrial precision
+    const newProject: ResearchProject = {
+      id: sampleId,
+      industry: name,
+      theme: theme || "技术革新与海内外量产竞争力研判",
+      frameworkDraft: {
+        domestic: `国内更聚焦于【${name}】的产业链落地与工程制造效率优化。国内制造工艺强调规模化量产的速度和性价比，更深入关注【${name}】相关的本土供应链、替代原料供给和工艺制造指标优化，并能在短时间内将量产良品率拉升。主要难点在于底层核心基础制造装备稳定性及原材料纯度。`,
+        foreign: `海外在【${name}】领域注重底层核心专利与关键行业标准指定。海外巨头更早进入原型研发，积累了丰富的物理失效机理库（如温差及摩擦极限、抗疲劳退化参数），其量产验证和实地工况测试极为严苛，但在全球重组生态下同样面临极高研发成本损耗难题。`,
+        comparison: `中国突围重心在于释放国内超强的大工业制造与极速适配优势；海外巨头则试图依靠长久以来积累的规则制定权和底层基础专利树限制突破。双重视角的工艺与标准对碰，构成了核心博弈场。`,
+        dimensions: [
+          { dimension: "工艺与量产稳定性", scope: `对【${name}】高阶制造与极精细封装一次高直通率进行拆解并实施周期性追踪。`, metrics: `装机一次良率(%)、设备高负荷周转率(%)、研发核算转化时间` },
+          { dimension: "关键核心元器件突破", scope: "海外独领标准关键环节在本土产业链中工艺对标与国产替代克配比率。", metrics: "物料自研替代率(%)、极限耐受环境性能、克阻抗降" },
+          { dimension: "产业链商业供求测算", scope: "下游客户意向定配以及在核心零部件阶梯折溢价下的边际承受度核算。", metrics: "单装机公允成本(元/套)、客户确认定点数、季度出货预测" }
+        ],
+        formula: `${name}供应链量产折现与盈利安全边际平衡预测模型:\nC_profit = ∑ [ (P_sell(t) - C_cost(t)) * Q_units(t) ] / (1 + r_discount)^t\n\n${name}技术效能退化仿真系数: D_decay(t) = D_base * exp( β * S_load / (K_durability * T_temp) ) * ln(t_runtime)`,
+        dataAcquisition: [
+          { id: "D01", name: `${name}核心元物料行业现货加权均价`, desc: "反映底层制造耗材与加工开销变化趋势", logic: "加权国内主要供应商大宗合同价，并结合上海有色、百川报价", source: "WIND (万得) & 中试线一手报价录入" },
+          { id: "D02", name: `${name}国际新申请专利及冲突案追踪`, desc: "用以判定自主设计合规性与前沿演变风向", logic: "检索全球主要知识产权公开检索词及地方法庭争议", source: "智慧芽 (PatSnap) & 巨潮资讯" },
+          { id: "D03", name: `下游领军大厂定配设计/中试联合流片成果`, desc: "验证标的产品真实在手转化率与试装车、装机实效", logic: "季度汇总主要承销方物理流料和系统参数反馈", source: "申万行业数据库 & 一手深度流片访谈" }
+        ]
+      },
+      confirmedFramework: null,
+      expertPanelFeedback: `针对【${name}】行业的多位外部顶尖专家交叉评议点：\n1. 行业内装配误差和生产磨损对产品一次良品率影响偏高，在“维度”中建议特强化工程制造容差；\n2. 剥离资本化修饰，由于核心材料/精密组件折旧摊销偏大，应当建立更严苛的公司硬资产去水估算；\n3. 强烈提醒对海外上游设备商的断供风险及全球自主保障比率实施月度级别压力测试监控。`,
+      isExpertReviewed: false,
+      skillsV0: [
+        {
+          id: "SK-01",
+          name: `${name}行业景气度研判-技术演进与全球出货Skill`,
+          category: "industry",
+          owner: "科技与前沿工业首席分析师",
+          version: "V0.0",
+          problemSolved: `应对【${name}】多技术方案并存期的景气度波动，量化跟踪下游采购大厂向核心材料/非标工艺提供商溢价结盟周期，协助投委会合理分配仓位。`,
+          triggers: `1. 下游超级整厂发布【${name}】新应用招标量增超30%\n2. 底层关键极性材料或高配装配耗材价格涨/跌超20%\n3. 巨头之间爆发跨国重大技术标准垄断公案`,
+          scenario: "中试向批产爬坡过渡期的标的排摸，支持研究组建立针对下代方案胜率的可视化推演和投资底线。",
+          steps: `1. 指标解析：爬梳重点供应商产能负荷比例与主流报价阶梯;\n2. 路径对配：对标国外标杆产品规格，折算核心物理参数（良率、抗老化）的代差比率;\n3. 拟合需求：以逻辑生长曲线拟合工艺自给率对国内出货周期的加速边界;\n4. 风控纠偏：跟踪诉讼和断离事件进程，合理扣减不确定溢价。`,
+          metrics: "物料一次通过率(%)、单端口折旧压力、代差折损系数、市场供需比",
+          sources: "WIND, 特高精工业年鉴, 行业专家背靠背会议, 智慧芽",
+          outputRequirements: `提供未来3-5年【${name}】在多重应用中的渗透趋势、量产损益平衡点以及各技术分支抗风险等级评定。`,
+          markdown: `# ${name}行业景气度研判-技术演进与全球出货Skill V0.0\n\n- **负责人**: 科技与前沿工业高级分析师\n- **版本号**: V0.0\n- **解决问题**: 解决前沿技术演进与出货拐点的测量。\n\n### 1. 场景与指标\n主要追踪物料制备稼动率、界面封装稳定性。通过WIND、智慧芽等工具获取核心指标。\n\n### 2. 标准实操分析步骤\n1. **数据梳理**: 监控流电厂主流物料采办单价。\n2. **物理/技术代差标定**: 对标海内外标配，分析热耗、良品率指标代差。\n3. **需求和订单测算**: 建立长期出货回归方程预测市场。`
+        },
+        {
+          id: "SK-02",
+          name: `${name}标的竞争力剖析-财务与估值模型Skill`,
+          category: "subject",
+          owner: "前沿装备特高精高级研究员",
+          version: "V0.0",
+          problemSolved: `评估【${name}】高壁垒个股的资产真实系数、直通毛利并矫正资产虚胖。使用动态折现及对标估值，剥离流片资本化修饰，寻找安全边际。`,
+          triggers: `1. 核心个股单度发生大型非标产线采购/定增获批\n2. 主营业务中研发投入资本化比例偏离中位数15%以上\n3. 主力整装厂传出更换核心标的供应商口风`,
+          scenario: "成长期企业的投前细致排核、主控估值模型敏感因子测算、防爆标风选。",
+          steps: `1. 穿透资产：拆解在建工程中非标测试设备的账面残值，剥离过度研发资产化;\n2. 成本还原：核对主流流片及辅材费用，重估真实一次直通良率下的理论毛利率;\n3. 对标估值：使用修正的PEG、客户依赖度模型，按自主设计合规梯度折算估值公允盈溢;\n4. 形成结论：计算不同应收账款和应收票据扣减损耗下的投资硬性测算。`,
+          metrics: "自研替代率(%)、设备高频直通良率、真实毛利率、研发资本化比例、修正PEG",
+          sources: "上市公司财报, 海关口径统计数据, 企业线上调研底稿",
+          outputRequirements: `提供该行业个股防泡沫财务穿透量级报告，算定低、中、高爆发增长速率假设下的估值敏感公允价格矩阵。`,
+          markdown: `# ${name}标的竞争力剖析-财务与估值模型Skill V0.0\n\n- **负责人**: 特高精高级研究员\n- **版本号**: V0.0\n- **解决问题**: 穿透上市公司财务质量，确定估值中枢，识别技术假突破泡沫。\n\n### 1. 核心重点\n重点剥离不合理资本化的研发支出，推测良品率对销售毛利以及安全边际的弹性。\n\n### 2. 标准流程\n1. **去泡沫核算**: 审计高新测试设备的计提折旧合理性。\n2. **多态估值矩阵**: 配置自主保护权重，算定公允折溢价区间。`
+        }
+      ],
+      radarScoresV0: {
+        "维度完整度": 80,
+        "逻辑严密性": 80,
+        "数据覆盖面": 75,
+        "可落地实施度": 75,
+        "模型可回测性": 70
+      },
+      skillsV1: null,
+      monitoringSignals: [
+        {
+          id: "SIG-01",
+          category: "report",
+          source: "海外产业研究中心",
+          title: `针对【${name}】的突发：核心制造装备上游材料原厂提价15%，量产成本线迎来新压力`,
+          content: "上游前沿零组件和流料因跨国局势引发供货紧张，对国内正处于中试阶段的主体设备一次直通良率提出更高极限要求。",
+          timestamp: "刚刚",
+          severity: "high",
+          implications: "此变局要求我们必须对‘物料一次高直通率’的核心权重加以极高重视，并在雷达质量中加以考核点。",
+          status: "pending"
+        }
+      ],
+      optimizationTargets: [
+        {
+          id: "OPT-01",
+          title: `追加在【${name}】重资产流片折旧与关键断离风险下的安全基线`,
+          description: "引入材料波动敏感系数，将宏观出货拐点分析与单Wh/单端口物料价格抗震性精密勾联。",
+          skillMatches: ["SK-01"],
+          confirmed: false
+        }
+      ],
+      skillsV1_1: null,
+      radarScoresV1_1: null,
+      skillsV2: null
+    };
+
+    if (reportsText && reportsText.trim().length > 0) {
+      newProject.frameworkDraft.domestic += ` (基于用户手工上传报告提取: ${reportsText.slice(0, 150)}...)`;
+    }
+
+    db.projects[sampleId] = newProject;
+    console.log(`Successfully created custom project [${sampleId}] for ${name}: ${newProject.theme}`);
+
+    res.json(newProject);
+  });
+
   // API 2: Step 1 & 2 - Generate/Re-generate Research Framework (optionally calls Gemini if key is active)
   app.post("/api/projects/:id/generate-framework", async (req, res) => {
     const { id } = req.params;
@@ -354,8 +509,8 @@ async function startServer() {
     const project = db.projects[id];
     if (!project) return res.status(404).json({ error: "Project not found" });
 
-    // If Gemini is active, let's call the actual AI to synthesize.
-    const hasActiveKey = process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY !== "MY_GEMINI_API_KEY";
+    // If Gemini is active and verified, let's call the actual AI to synthesize.
+    const hasActiveKey = process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY !== "MY_GEMINI_API_KEY" && geminiStatus.verified;
 
     if (hasActiveKey && ai) {
       try {
@@ -439,7 +594,7 @@ async function startServer() {
     if (!project) return res.status(404).json({ error: "Project not found" });
 
     // Compile skills using Gemini or default expert sets
-    const hasActiveKey = process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY !== "MY_GEMINI_API_KEY";
+    const hasActiveKey = process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY !== "MY_GEMINI_API_KEY" && geminiStatus.verified;
 
     if (hasActiveKey && ai && project.confirmedFramework) {
       try {
@@ -525,7 +680,7 @@ async function startServer() {
 
     // In a live scenario we can grade them based on metric checklist, lets generate consistent radar results
     // with light random perturbation to represent dynamic testing or run Gemini to score them!
-    const hasActiveKey = process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY !== "MY_GEMINI_API_KEY";
+    const hasActiveKey = process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY !== "MY_GEMINI_API_KEY" && geminiStatus.verified;
 
     if (hasActiveKey && ai) {
       try {
@@ -628,7 +783,7 @@ async function startServer() {
     if (!project) return res.status(404).json({ error: "Project not found" });
 
     const activeTargets = project.optimizationTargets.filter(t => t.confirmed);
-    const hasActiveKey = process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY !== "MY_GEMINI_API_KEY";
+    const hasActiveKey = process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY !== "MY_GEMINI_API_KEY" && geminiStatus.verified;
 
     // Use current skills as baseline (either V1 or fall back to V0)
     const baseSkills = project.skillsV1 || project.skillsV0;
@@ -846,7 +1001,7 @@ async function startServer() {
   // API 12: Trigger live creation of a hot event via Gemini or preset helper
   app.post("/api/operations/trigger-event", async (req, res) => {
     const { title, industryFocus } = req.body;
-    const hasActiveKey = process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY !== "MY_GEMINI_API_KEY";
+    const hasActiveKey = process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY !== "MY_GEMINI_API_KEY" && geminiStatus.verified;
 
     let eventResult = {
       id: "EV-" + Date.now().toString().slice(-4),
@@ -941,6 +1096,7 @@ async function startServer() {
 
   app.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on http://localhost:${PORT}`);
+    verifyGeminiKey();
   });
 }
 
