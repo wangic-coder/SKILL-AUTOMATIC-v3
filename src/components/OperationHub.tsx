@@ -65,11 +65,15 @@ export default function OperationHub() {
   const loadOperationsData = async () => {
     try {
       const res = await fetch("/api/operations/data");
-      const data = await res.json();
-      setEvents(data.events);
-      setCatalysts(data.catalysts);
-      setFactors(data.factors);
-      setKpis(data.kpis);
+      if (res.ok && res.headers.get("content-type")?.includes("application/json")) {
+        const data = await res.json();
+        setEvents(data.events);
+        setCatalysts(data.catalysts);
+        setFactors(data.factors);
+        setKpis(data.kpis);
+      } else {
+        console.warn("Operations data response was non-JSON or not ok:", res);
+      }
     } catch (e) {
       console.error("Failed to load operations metrics on client.", e);
     }
@@ -114,8 +118,12 @@ export default function OperationHub() {
   const handleMassPush = async () => {
     try {
       const res = await fetch("/api/operations/push-all", { method: "POST" });
-      const data = await res.json();
-      alert(data.message);
+      if (res.ok && res.headers.get("content-type")?.includes("application/json")) {
+        const data = await res.json();
+        alert(data.message);
+      } else {
+        alert("推送通知异常，请检查后端状态。");
+      }
     } catch (e) {
       console.error(e);
     }

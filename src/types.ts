@@ -111,10 +111,20 @@ export interface DashboardKpis {
   }>;
 }
 
+export interface ExpertOpinion {
+  id: string;
+  name: string;
+  title: string;
+  comment: string;
+  status: "agreed" | "conditional" | "need_tweak";
+  avatarColor: string;
+}
+
 export interface ProjectDetail extends ResearchProjectShort {
   frameworkDraft: FrameworkDraft;
   confirmedFramework: FrameworkDraft | null;
   expertPanelFeedback: string;
+  expertOpinions?: ExpertOpinion[];
   skillsV0: SkillItem[];
   radarScoresV0: Record<string, number>;
   skillsV1: SkillItem[] | null;

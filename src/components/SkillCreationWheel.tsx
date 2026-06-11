@@ -70,6 +70,19 @@ export default function SkillCreationWheel({ project, onRefresh }: SkillCreation
   const [saveStatusMsg, setSaveStatusMsg] = useState<string>("");
   const [isLockingV1, setIsLockingV1] = useState<boolean>(false);
 
+  // Expert opinions configuration states
+  const [localExperts, setLocalExperts] = useState<any[]>([]);
+  const [editingExpertId, setEditingExpertId] = useState<string | null>(null);
+  const [isSavingOpinions, setIsSavingOpinions] = useState<boolean>(false);
+  const [isAddingNewExpert, setIsAddingNewExpert] = useState<boolean>(false);
+  const [expertForm, setExpertForm] = useState({
+    name: "",
+    title: "",
+    comment: "",
+    status: "conditional" as "agreed" | "conditional" | "need_tweak",
+    avatarColor: "amber"
+  });
+
   // Sync with project updates
   useEffect(() => {
     if (project) {
@@ -82,8 +95,85 @@ export default function SkillCreationWheel({ project, onRefresh }: SkillCreation
       if (project.skillsV0 && project.skillsV0.length > 0) {
         setActiveSkillTab(project.skillsV0[0].id);
       }
+      if (project.expertOpinions && project.expertOpinions.length > 0) {
+        setLocalExperts(JSON.parse(JSON.stringify(project.expertOpinions)));
+      } else if (project.expertPanelFeedback) {
+        setLocalExperts([
+          {
+            id: "exp-1",
+            name: "专家评议组",
+            title: "多方专家交叉核心回馈",
+            comment: project.expertPanelFeedback,
+            status: "conditional",
+            avatarColor: "amber"
+          }
+        ]);
+      }
     }
   }, [project]);
+
+  // Save all expert opinions to backend
+  const saveExpertOpinionsToBackend = async (opinions: any[]) => {
+    setIsSavingOpinions(true);
+    try {
+      const res = await fetch(`/api/projects/${project.id}/expert-opinions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ expertOpinions: opinions })
+      });
+      if (res.ok) {
+        onRefresh();
+      } else {
+        console.error("Failed to save expert opinions to the backend.");
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsSavingOpinions(false);
+    }
+  };
+
+  // Add or update a single expert's opinion from form
+  const handleSaveSingleExpert = () => {
+    if (!expertForm.name || !expertForm.comment) {
+      alert("请填写专家姓名以及具体的反馈意见。");
+      return;
+    }
+
+    let updatedList = [...localExperts];
+    if (isAddingNewExpert) {
+      const newExp = {
+        id: "exp-" + Date.now().toString(),
+        name: expertForm.name,
+        title: expertForm.title || "特聘咨询顾问",
+        comment: expertForm.comment,
+        status: expertForm.status,
+        avatarColor: expertForm.avatarColor
+      };
+      updatedList.push(newExp);
+    } else if (editingExpertId) {
+      updatedList = updatedList.map(item => {
+        if (item.id === editingExpertId) {
+          return {
+            ...item,
+            name: expertForm.name,
+            title: expertForm.title || "特聘咨询顾问",
+            comment: expertForm.comment,
+            status: expertForm.status,
+            avatarColor: expertForm.avatarColor
+          };
+        }
+        return item;
+      });
+    }
+
+    setLocalExperts(updatedList);
+    setEditingExpertId(null);
+    setIsAddingNewExpert(false);
+
+    // Persist to server
+    saveExpertOpinionsToBackend(updatedList);
+  };
 
   // Submit report + run AI to build/re-generate framework draft
   const handleGenerateFramework = async () => {
@@ -769,13 +859,221 @@ export default function SkillCreationWheel({ project, onRefresh }: SkillCreation
               
               {/* Expert feedback block */}
               <div className="md:col-span-5 bg-zinc-950 rounded-lg p-5 border border-zinc-850 space-y-4">
-                <div className="flex items-center gap-2 pb-2 border-b border-zinc-850">
-                  <span className="bg-amber-500 text-black font-semibold text-[10px] px-1.5 py-0.5 rounded">外部询证</span>
-                  <h5 className="text-xs font-bold text-zinc-300">多方专家匿名评审综合意见</h5>
+                <div className="flex items-center justify-between pb-2 border-b border-zinc-850">
+                  <div className="flex items-center gap-2">
+                    <span className="bg-amber-500 text-black font-semibold text-[10px] px-1.5 py-0.5 rounded">外部询证</span>
+                    <h5 className="text-xs font-bold text-zinc-300">专家评审独立意见</h5>
+                  </div>
+                  <button
+                    type="button"
+                    id="add-new-expert-trigger-btn"
+                    onClick={() => {
+                      setIsAddingNewExpert(true);
+                      setEditingExpertId(null);
+                      setExpertForm({
+                        name: "",
+                        title: "",
+                        comment: "",
+                        status: "conditional",
+                        avatarColor: "sky"
+                      });
+                    }}
+                    className="text-[10px] bg-emerald-950/40 border border-emerald-500/30 hover:bg-emerald-900/40 text-emerald-400 py-1 px-2 rounded-md transition-all flex items-center gap-1 cursor-pointer"
+                  >
+                    <Plus className="h-2.5 w-2.5" />
+                    添加专家
+                  </button>
                 </div>
-                
-                <div className="text-xs font-mono text-amber-300/90 leading-relaxed bg-zinc-900/60 p-4 rounded border border-amber-950/40 whitespace-pre-line text-[11px]">
-                  {project.expertPanelFeedback}
+
+                {/* Form to Add / Edit */}
+                {(editingExpertId || isAddingNewExpert) && (
+                  <div className="p-4 bg-zinc-900 border border-zinc-800 rounded-lg space-y-3 animate-in slide-in-from-top-2 duration-250">
+                    <div className="text-xs font-bold text-white flex justify-between items-center">
+                      <span className="text-emerald-400 font-mono text-[11px]">
+                        {isAddingNewExpert ? "➕ 添加新专家意见" : "⚙️ 配置专家独立意见"}
+                      </span>
+                      <button 
+                        type="button" 
+                        onClick={() => {
+                          setEditingExpertId(null);
+                          setIsAddingNewExpert(false);
+                        }} 
+                        className="text-zinc-400 hover:text-white text-[11px] font-mono underline"
+                      >
+                        取消
+                      </button>
+                    </div>
+
+                    <div className="space-y-2 mt-1">
+                      <div>
+                        <label className="text-[10px] text-zinc-400 block mb-0.5 font-mono">专家学者姓名 *</label>
+                        <input
+                          type="text"
+                          value={expertForm.name}
+                          onChange={(e) => setExpertForm({ ...expertForm, name: e.target.value })}
+                          placeholder="例如: 林文生 教授"
+                          className="w-full text-xs bg-zinc-950 border border-zinc-800 focus:border-emerald-500/50 rounded px-2.5 py-1 text-white outline-none font-mono"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-[10px] text-zinc-400 block mb-0.5 font-mono">职称 / 代表机构与背书 *</label>
+                        <input
+                          type="text"
+                          value={expertForm.title}
+                          onChange={(e) => setExpertForm({ ...expertForm, title: e.target.value })}
+                          placeholder="例如: 中科院物理所新型材料实验室总工程师"
+                          className="w-full text-xs bg-zinc-950 border border-zinc-800 focus:border-emerald-500/50 rounded px-2.5 py-1 text-white outline-none font-mono"
+                        />
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="text-[10px] text-zinc-400 block mb-0.5 font-mono">态度倾向</label>
+                          <select
+                            value={expertForm.status}
+                            onChange={(e) => setExpertForm({ ...expertForm, status: e.target.value as any })}
+                            className="w-full text-[11px] bg-zinc-950 border border-zinc-800 focus:border-emerald-500/50 rounded p-1 text-white outline-none font-mono"
+                          >
+                            <option value="agreed">✔️ 同意定稿</option>
+                            <option value="conditional">⏳ 补充修正</option>
+                            <option value="need_tweak">❌ 驳回纠偏</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="text-[10px] text-zinc-400 block mb-0.5 font-mono">视觉主题色</label>
+                          <div className="flex gap-1.5 pt-1.5">
+                            {["amber", "emerald", "blue", "purple", "sky", "rose"].map(c => (
+                              <button
+                                key={c}
+                                type="button"
+                                onClick={() => setExpertForm({ ...expertForm, avatarColor: c })}
+                                className={`w-4 h-4 rounded-full border transition-all ${
+                                  expertForm.avatarColor === c ? "border-white ring-1 ring-emerald-400 scale-110" : "border-transparent opacity-60 hover:opacity-100"
+                                } ${
+                                  c === "amber" ? "bg-amber-400" :
+                                  c === "emerald" ? "bg-emerald-400" :
+                                  c === "blue" ? "bg-blue-400" :
+                                  c === "purple" ? "bg-purple-400" :
+                                  c === "sky" ? "bg-sky-400" : "bg-rose-400"
+                                }`}
+                              />
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="text-[10px] text-zinc-400 block mb-0.5 font-mono">具体指正意见 *</label>
+                        <textarea
+                          rows={4}
+                          value={expertForm.comment}
+                          onChange={(e) => setExpertForm({ ...expertForm, comment: e.target.value })}
+                          placeholder="填写专家做出的反馈细节与指标微调指正意见。"
+                          className="w-full text-xs bg-zinc-950 border border-zinc-800 focus:border-emerald-500/50 rounded p-2 text-white outline-none font-mono"
+                        />
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={handleSaveSingleExpert}
+                      disabled={isSavingOpinions}
+                      className="w-full bg-emerald-500 hover:bg-emerald-400 disabled:bg-zinc-700 text-black font-extrabold text-xs py-1.5 rounded transition-colors flex items-center justify-center gap-1 cursor-pointer"
+                    >
+                      {isSavingOpinions ? "⏳ 正在同步到云端..." : "💾 确认意见并更新同步"}
+                    </button>
+                  </div>
+                )}
+
+                {/* Separated List display */}
+                <div id="expert-opinions-list" className="space-y-3 max-h-[460px] overflow-y-auto pr-1">
+                  {localExperts.map((exp, idx) => (
+                    <div 
+                      key={exp.id || idx} 
+                      className={`p-3.5 rounded-lg bg-zinc-900/60 border transition-all relative group ${
+                        editingExpertId === exp.id 
+                          ? "border-emerald-500/75 shadow-md shadow-emerald-950/30" 
+                          : exp.status === 'agreed'
+                            ? "border-zinc-850/60 hover:border-emerald-500/20"
+                            : exp.status === 'need_tweak'
+                              ? "border-zinc-850/60 hover:border-rose-500/20"
+                              : "border-zinc-850/60 hover:border-amber-500/20"
+                      }`}
+                    >
+                      <div className="flex items-start gap-3">
+                        {/* Avatar */}
+                        <div className={`w-7.5 h-7.5 rounded-full flex items-center justify-center shrink-0 text-[11px] font-mono font-black text-black select-none ${
+                          exp.avatarColor === 'emerald' ? 'bg-emerald-400' :
+                          exp.avatarColor === 'blue' ? 'bg-blue-400' :
+                          exp.avatarColor === 'purple' ? 'bg-purple-300' :
+                          exp.avatarColor === 'sky' ? 'bg-sky-400' :
+                          exp.avatarColor === 'rose' ? 'bg-rose-400' : 'bg-amber-400'
+                        }`}>
+                          {exp.name ? exp.name.slice(0, 2) : "学"}
+                        </div>
+
+                        {/* Details */}
+                        <div className="flex-1 space-y-1 min-w-0">
+                          <div className="flex items-center justify-between gap-1.5">
+                            <h6 className="text-[11px] font-bold text-zinc-100 font-mono">{exp.name}</h6>
+                            <span className={`text-[8.5px] font-mono px-1.5 py-0.5 rounded border inline-block ${
+                              exp.status === 'agreed'
+                                ? "bg-emerald-950/30 border-emerald-500/20 text-emerald-400"
+                                : exp.status === 'need_tweak'
+                                  ? "bg-rose-950/30 border-rose-500/20 text-rose-400"
+                                  : "bg-amber-950/30 border-amber-500/20 text-amber-400"
+                            }`}>
+                              {exp.status === 'agreed' ? "✔️ 同意" : 
+                               exp.status === 'need_tweak' ? "❌ 驳回" : "⚠️ 需修改"}
+                            </span>
+                          </div>
+                          
+                          <p className="text-[9.5px] text-zinc-400 leading-tight font-mono">{exp.title}</p>
+                          <p className="text-[10.5px] text-zinc-300 leading-relaxed font-mono whitespace-pre-wrap pt-1">{exp.comment}</p>
+                          
+                          {/* Card Actions */}
+                          <div className="flex items-center justify-end gap-3.5 pt-1.5 border-t border-zinc-800/40 mt-1.5 opacity-80 group-hover:opacity-100 transition-opacity text-[10px]">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditingExpertId(exp.id);
+                                setIsAddingNewExpert(false);
+                                setExpertForm({
+                                  name: exp.name,
+                                  title: exp.title,
+                                  comment: exp.comment,
+                                  status: exp.status,
+                                  avatarColor: exp.avatarColor || "amber"
+                                });
+                              }}
+                              className="text-zinc-400 hover:text-emerald-400 transition-colors cursor-pointer font-mono flex items-center gap-0.5"
+                            >
+                              🛠️ 配置
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (confirm(`确认要删除专家 ${exp.name} 的单独评语意见吗？`)) {
+                                  const updated = localExperts.filter(item => item.id !== exp.id);
+                                  setLocalExperts(updated);
+                                  saveExpertOpinionsToBackend(updated);
+                                }
+                              }}
+                              className="text-zinc-500 hover:text-rose-400 transition-colors cursor-pointer font-mono"
+                            >
+                              🗑️ 移除
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                  {localExperts.length === 0 && (
+                    <div className="text-center py-6 text-zinc-550 text-xs font-mono">
+                      暂无独立专家意见，请点击右上角添加。
+                    </div>
+                  )}
                 </div>
 
                 <div className="text-[11px] text-zinc-500 leading-relaxed">

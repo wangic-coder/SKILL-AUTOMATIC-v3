@@ -48,7 +48,7 @@ export default function App() {
   const handleProjectCreated = async (newId: string, initialReportText: string) => {
     try {
       const res = await fetch("/api/projects");
-      if (res.ok) {
+      if (res.ok && res.headers.get("content-type")?.includes("application/json")) {
         const list: ResearchProjectShort[] = await res.json();
         setProjects(list);
         setActiveProjectId(newId);
@@ -62,7 +62,7 @@ export default function App() {
   const fetchGeminiStatus = async () => {
     try {
       const res = await fetch("/api/gemini-status");
-      if (res.ok) {
+      if (res.ok && res.headers.get("content-type")?.includes("application/json")) {
         const data = await res.json();
         setGeminiStatus(data);
       }
@@ -75,10 +75,14 @@ export default function App() {
   const fetchProjectsList = async (selectFirst = false) => {
     try {
       const res = await fetch("/api/projects");
-      const list: ResearchProjectShort[] = await res.json();
-      setProjects(list);
-      if (list.length > 0 && (!activeProjectId || selectFirst)) {
-        setActiveProjectId(list[0].id);
+      if (res.ok && res.headers.get("content-type")?.includes("application/json")) {
+        const list: ResearchProjectShort[] = await res.json();
+        setProjects(list);
+        if (list.length > 0 && (!activeProjectId || selectFirst)) {
+          setActiveProjectId(list[0].id);
+        }
+      } else {
+        console.warn("Received non-JSON or error status while loading projects list.");
       }
     } catch (e) {
       console.error("Error loading project list from server:", e);
@@ -91,9 +95,11 @@ export default function App() {
     if (!silent) setIsLoading(true);
     try {
       const res = await fetch(`/api/projects/${id}`);
-      if (res.ok) {
+      if (res.ok && res.headers.get("content-type")?.includes("application/json")) {
         const detail: ProjectDetail = await res.json();
         setProjectDetail(detail);
+      } else {
+        console.warn("Received non-JSON or error status while loading project details.");
       }
     } catch (e) {
       console.error(`Error loading details for project ${id}:`, e);
@@ -317,7 +323,7 @@ export default function App() {
             >
               {projects.map(p => (
                 <option key={p.id} value={p.id}>
-                  {p.industry}
+                  {p.id.startsWith("project-") ? `📥 手工研报: ${p.industry}` : p.industry}
                 </option>
               ))}
             </select>
@@ -340,6 +346,40 @@ export default function App() {
 
         {/* Dynamic workflow tracker bar */}
         {renderFlowCockpit()}
+
+        {/* Dynamic manual upload feature spotlight banner */}
+        <div id="manual-upload-spotlight" className="bg-gradient-to-br from-emerald-950/25 via-zinc-950 to-zinc-950 border border-emerald-500/25 rounded-xl p-5 md:p-6 relative overflow-hidden shadow-lg animate-in fade-in duration-300">
+          <div className="absolute top-0 right-0 w-64 h-64 bg-emerald-500/5 rounded-full blur-3xl pointer-events-none"></div>
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-5 relative z-10">
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <span className="bg-emerald-500 text-black font-mono text-[9px] font-bold px-2 py-0.5 rounded uppercase tracking-wider">NEW FEATURE</span>
+                <span className="text-zinc-400 font-mono text-xs">手工研报对碰与全链路实时自解构演进系统</span>
+              </div>
+              <h2 className="text-base sm:text-lg font-bold text-white tracking-tight">
+                📥 智能手工研报上传 与 全链路实时投研自演进
+              </h2>
+              <p className="text-xs text-zinc-400 max-w-3xl leading-relaxed">
+                无论是企业一手流片纪要、大厂内部中试线汇报还是第三方技术规格文书，拖拽/选中您的研报，飞轮平台即可自动判定海内外技术路线对碰与国产化突围难关。您可以通过本页下方的 <span className="text-emerald-400 font-semibold">1-6 步自动合成大模型</span>，直接析出专有原子化投研 Skill，捕获最新的突发市场变化并进行从 V0.0 到 V2.0 的动态技能自迭代升级。
+              </p>
+              <div className="flex flex-wrap gap-x-4 gap-y-1.5 text-[10px] text-zinc-500 font-mono">
+                <span className="flex items-center gap-1"><span className="text-emerald-400 font-bold">1</span>. 拖入研报内容</span>
+                <span className="flex items-center gap-1">➡️ <span className="text-emerald-400 font-bold">2</span>. 全自动对碰框架</span>
+                <span className="flex items-center gap-1">➡️ <span className="text-emerald-400 font-bold">3</span>. 专家组融合评测</span>
+                <span className="flex items-center gap-1">➡️ <span className="text-emerald-400 font-bold">4</span>. 生成双边 Skill V0</span>
+                <span className="flex items-center gap-1">➡️ <span className="text-emerald-400 font-bold">5</span>. 突发信号月度自迭代</span>
+              </div>
+            </div>
+            <button
+              id="spotlight-upload-btn"
+              onClick={() => setIsUploadOpen(true)}
+              className="bg-emerald-500 hover:bg-emerald-400 text-black font-extrabold text-xs px-5 py-3 rounded-lg flex items-center gap-2 transition-all cursor-pointer shadow-md shadow-emerald-950/20 shrink-0 self-start md:self-center"
+            >
+              <Plus className="h-4 w-4" />
+              立即手工上传最新研究报告
+            </button>
+          </div>
+        </div>
 
         {/* Dual Panels layout (Left controller, Right modules) */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">

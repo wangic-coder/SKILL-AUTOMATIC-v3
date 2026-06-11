@@ -84,6 +84,14 @@ interface ResearchProject {
   };
   confirmedFramework: any | null;
   expertPanelFeedback: string;
+  expertOpinions?: Array<{
+    id: string;
+    name: string;
+    title: string;
+    comment: string;
+    status: "agreed" | "conditional" | "need_tweak";
+    avatarColor: string;
+  }>;
   isExpertReviewed: boolean;
   skillsV0: Array<{
     id: string;
@@ -153,6 +161,32 @@ const PRESETS: Record<string, any> = {
       ]
     },
     expertPanelFeedback: "专家组意见：\n1. 在‘工艺与量产线’维度中，应加入‘干电极工艺溶剂残留度’这一指标，这会直接影响锂金属在全固态界面上的原位刺穿树枝晶行为。\n2. 增加针对海外固态包（Toyota硫化物等）在零下30摄氏度极端低温下的充放电循环衰减参数。\n3. 数据源方面，需要引入国际船运/海关出关口径的稀有原料（如锂/硫纯化物等）进口数据，用于核对供应链受约束的概率。",
+    expertOpinions: [
+      {
+        id: "exp-1",
+        name: "张文浩",
+        title: "前沿储能首席研究员 - 中科院物理所",
+        comment: "在‘工艺与量产线’维度中，强力建议加入‘干电极工艺溶剂残留度（ppm）’这一核心指标，这直接影响锂金属在全固态界面上的原位刺穿树枝晶行为，对一次性直通良品率至关重要。",
+        status: "conditional",
+        avatarColor: "amber"
+      },
+      {
+        id: "exp-2",
+        name: "Kenji Sato 教授",
+        title: "固态电池工艺中试线特聘总工程师 - 前爱信精机研发总监",
+        comment: "需要增加海外经典固态包（如Toyota硫化物路线）在极寒极端低温（零下30摄氏度）下的充放电循环物理失效模型与全天候衰减参数，建议在技术渗透维度进行核心指标强化。",
+        status: "need_tweak",
+        avatarColor: "emerald"
+      },
+      {
+        id: "exp-3",
+        name: "李欣华",
+        title: "动力电池投委会合伙人 - 申万宏源投研中心",
+        comment: "数据源中必须要引入国际海运、稀有关键矿产出关口径的微观高纯物（如硫化锂、高纯多聚物等）进口周期价格统计，防止估值过度资本化水分，建立更严苛的硬资产去水折旧压力测试。",
+        status: "agreed",
+        avatarColor: "blue"
+      }
+    ],
     isExpertReviewed: false,
     skillsV0: [
       {
@@ -271,6 +305,32 @@ const PRESETS: Record<string, any> = {
       ]
     },
     expertPanelFeedback: "专家组意见：\n1. 高速CPO中对光源要求苛刻，请在核心元器件指标中加入‘外置光源（ELS）抗反光反馈容差阈值(dB)’。\n2. 在封装端，急需细化硅通孔（TSV）在重布线层的高频传输电气损耗衰减规律。\n3. 下游渗透中，关于单端口网络适配成本（成本/每100G），应该列为评估技术升级的最核心财务约束指标。",
+    expertOpinions: [
+      {
+        id: "exp-1",
+        name: "林建勋",
+        title: "微纳光子自旋电子实验室特聘教授 - 上海交通大学",
+        comment: "高速CPO架构下中对连续激光光源（ELS）要求极其苛刻，建议在核心元器件对配指标中明确添载‘外置光源抗反光物理反馈容差阈值(dB)’等硬核部件规格，这对防范芯片级反射损伤极其关键。",
+        status: "conditional",
+        avatarColor: "amber"
+      },
+      {
+        id: "exp-2",
+        name: "赵崇阳",
+        title: "高精集成封测中试车间总工程师/核心厂长",
+        comment: "在封装级维度上，亟需细化硅通孔（TSV）在2.5D/3D重布线层（RDL）的高频高阻电气传输电气损耗及抖动阻抗衰减规律。当前V0.0评估这块稍弱，不利于中试去水核算。",
+        status: "need_tweak",
+        avatarColor: "emerald"
+      },
+      {
+        id: "exp-3",
+        name: "陈静仪",
+        title: "首席TMT硬件核心投资分析师 - 华泰证券",
+        comment: "下游订单与渗透率测算中，关于‘单通道物理端口网络适配综合成本（每100G带宽平均美元售价）’应该列为投委会审核新一代CPO升级最核心财务边界性红线指标。",
+        status: "agreed",
+        avatarColor: "blue"
+      }
+    ],
     isExpertReviewed: false,
     skillsV0: [
       {
@@ -392,6 +452,37 @@ async function startServer() {
     res.json(project);
   });
 
+  // API 1.4: Update or configure expert opinions
+  app.post("/api/projects/:id/expert-opinions", (req, res) => {
+    const project = db.projects[req.params.id];
+    if (!project) return res.status(404).json({ error: "Project not found" });
+
+    const { expertOpinions } = req.body;
+    if (!Array.isArray(expertOpinions)) {
+      return res.status(400).json({ error: "expertOpinions must be an array" });
+    }
+
+    project.expertOpinions = expertOpinions;
+
+    // Auto-update the legacy expertPanelFeedback for backward compatibility
+    const statusMap: Record<string, string> = {
+      agreed: "✔️同意推荐",
+      conditional: "⚠️有条件同意",
+      need_tweak: "❌需纠偏微调"
+    };
+    
+    project.expertPanelFeedback = "专家评审综合汇总：\n" + expertOpinions.map((o, idx) => {
+      const statusLabel = statusMap[o.status] || "";
+      return `【专家 #${idx + 1}】${o.name} (${o.title}) - 审核意见：[${statusLabel}]\n意见内容：${o.comment}`;
+    }).join("\n\n");
+
+    res.json({ 
+      success: true, 
+      expertOpinions: project.expertOpinions,
+      expertPanelFeedback: project.expertPanelFeedback
+    });
+  });
+
   // API 1.5: Create a brand new project dynamically from manual report upload/metadata
   app.post("/api/projects", (req, res) => {
     const { name, theme, reportsText } = req.body;
@@ -424,6 +515,32 @@ async function startServer() {
       },
       confirmedFramework: null,
       expertPanelFeedback: `针对【${name}】行业的多位外部顶尖专家交叉评议点：\n1. 行业内装配误差和生产磨损对产品一次良品率影响偏高，在“维度”中建议特强化工程制造容差；\n2. 剥离资本化修饰，由于核心材料/精密组件折旧摊销偏大，应当建立更严苛的公司硬资产去水估算；\n3. 强烈提醒对海外上游设备商的断供风险及全球自主保障比率实施月度级别压力测试监控。`,
+      expertOpinions: [
+        {
+          id: "exp-1",
+          name: "孙绍平",
+          title: `【${name}】特邀工程制造评议员 - 先进制造研究院`,
+          comment: `行业内装配误差和生产磨损对【${name}】产品一次良品率影响偏高，在“工艺与量产稳定性”维度中建议强化对极限耐受环境的高直通容差核算。`,
+          status: "conditional",
+          avatarColor: "amber"
+        },
+        {
+          id: "exp-2",
+          name: "曾广博",
+          title: `前沿行业独立产业顾问`,
+          comment: `剥离资本化修饰。由于【${name}】材料与关键设备折旧摊销偏大，强力提醒要在模型二中加入严苛去水调整机制。`,
+          status: "need_tweak",
+          avatarColor: "emerald"
+        },
+        {
+          id: "exp-3",
+          name: "王奕哲",
+          title: `硬科技风投合伙人`,
+          comment: `外部供应链保障极重要。建议对核心上游设备商的断供风险及全球自主保障比率实施月度级别的压力测试监控，作为中试演进的核心触发信号。`,
+          status: "agreed",
+          avatarColor: "blue"
+        }
+      ],
       isExpertReviewed: false,
       skillsV0: [
         {
@@ -481,9 +598,16 @@ async function startServer() {
       optimizationTargets: [
         {
           id: "OPT-01",
-          title: `追加在【${name}】重资产流片折旧与关键断离风险下的安全基线`,
-          description: "引入材料波动敏感系数，将宏观出货拐点分析与单Wh/单端口物料价格抗震性精密勾联。",
+          title: `追加在【${name}】重资产封装及关键设备断离风险下的安全性测试`,
+          description: "评估关键上游精密零部件和极板采办限制。引入材料波动敏感系数，将宏观装车波动与设备摊销弹性勾联。",
           skillMatches: ["SK-01"],
+          confirmed: false
+        },
+        {
+          id: "OPT-02",
+          title: `针对【${name}】高阶装配精细度及企业核心估值安全边界重组`,
+          description: "建立高扭矩及低失效率折算下的5阶重构估值阶梯模型，有效剥离流片等非流动资产资本化修饰。",
+          skillMatches: ["SK-02"],
           confirmed: false
         }
       ],
@@ -729,9 +853,15 @@ async function startServer() {
 
     // High quality mock review verdict based on industry
     const isBattery = id === "solid-state-battery";
-    const verdict = isBattery
-      ? "该评测判定V0.0框架极具实操广度。在供应链SMM等关键指标的接入点准确，对中试产线至量产渗透率的路径分析合理。但在全电芯界面的物理退化参数、干法成型残存气泡影响等‘界面物理微观行为’的捕获上明显偏弱。回回测框架缺乏对低温状态下容量突变退化的风险预测指标，建议增加低温全天候循环测试模块。"
-      : "该评测引擎评定高速互联V0.0文档逻辑闭环。通过调制器与ASIC重布物理架构展开论述。但在外接光源抗返光、高频高热状态下的机械共振、激光耦合对准环境老化因子覆盖较弱。对于多波长调制过程中的信道折损缺乏高精回测数据流支持，回测可推导性受到微纳芯片工艺流片非连续的干扰。";
+    const isCpo = id === "cpo-silicon-light";
+    let verdict = "";
+    if (isBattery) {
+      verdict = "该评测判定V0.0框架极具实操广度。在供应链SMM等关键指标的接入点准确，对中试产线至量产渗透率的路径分析合理。但在全电芯界面的物理退化参数、干法成型残存气泡影响等‘界面物理微观行为’的捕获上明显偏弱。回回测框架缺乏对低温状态下容量突变退化的风险预测指标，建议增加低温全天候循环测试模块。";
+    } else if (isCpo) {
+      verdict = "该评测引擎评定高速互联V0.0文档逻辑闭环。通过调制器与ASIC重布物理架构展开论述。但在外接光源抗返光、高频高热状态下的机械共振、激光耦合对准环境老化因子覆盖较弱。对于多波长调制过程中的信道折损缺乏高精回测数据流支持，回测可推导性受到微纳芯片工艺流片非连续的干扰。";
+    } else {
+      verdict = `该评测系统已针对【${project.industry}】特有工艺指标进行了深度定量测算。当前V0.0原子化技能在底层物料一次合格通过率与本土核心材料替代弹性核算上表现出极强的可实操性，监测链条健全。唯一不足在于对海内外高阶装配精度及重资产厂房、流片折旧摊销带来的中长期公允成长压力测试偏弱。强烈建议在随后的中试自迭代中解锁两项优化指标，加入非线性参数去水修正，以满足高规格投委会的一票否决可靠性标准。`;
+    }
 
     res.json({ scores: project.radarScoresV0, verdict });
   });

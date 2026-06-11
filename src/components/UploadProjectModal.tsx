@@ -113,8 +113,8 @@ export default function UploadProjectModal({ isOpen, onClose, onCreated }: Uploa
         })
       });
 
-      if (!res.ok) {
-        throw new Error("后端接口返回异常");
+      if (!res.ok || !res.headers.get("content-type")?.includes("application/json")) {
+        throw new Error("后端接口返回异常或非 JSON 格式");
       }
 
       const data = await res.json();
