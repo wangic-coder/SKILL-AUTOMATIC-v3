@@ -125,6 +125,7 @@ export interface ProjectDetail extends ResearchProjectShort {
   confirmedFramework: FrameworkDraft | null;
   expertPanelFeedback: string;
   expertOpinions?: ExpertOpinion[];
+  extractionPrompt?: string;
   skillsV0: SkillItem[];
   radarScoresV0: Record<string, number>;
   skillsV1: SkillItem[] | null;

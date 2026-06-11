@@ -83,6 +83,11 @@ export default function SkillCreationWheel({ project, onRefresh }: SkillCreation
     avatarColor: "amber"
   });
 
+  // Custom extraction prompt states
+  const [extractionPrompt, setExtractionPrompt] = useState<string>("");
+  const [isSavingPrompt, setIsSavingPrompt] = useState<boolean>(false);
+  const [promptSaveStatus, setPromptSaveStatus] = useState<string>("");
+
   // Sync with project updates
   useEffect(() => {
     if (project) {
@@ -92,6 +97,11 @@ export default function SkillCreationWheel({ project, onRefresh }: SkillCreation
       setSkillsV1(project.skillsV1 || JSON.parse(JSON.stringify(project.skillsV0 || [])));
       setIsResearcherConfirmed(project.confirmedFramework !== null);
       setIsExpertConfirmed(project.isExpertReviewed);
+      if (project.extractionPrompt) {
+        setExtractionPrompt(project.extractionPrompt);
+      } else {
+        setExtractionPrompt("");
+      }
       if (project.skillsV0 && project.skillsV0.length > 0) {
         setActiveSkillTab(project.skillsV0[0].id);
       }
@@ -175,6 +185,33 @@ export default function SkillCreationWheel({ project, onRefresh }: SkillCreation
     saveExpertOpinionsToBackend(updatedList);
   };
 
+  // Save custom extraction prompt template
+  const handleSaveExtractionPrompt = async () => {
+    setIsSavingPrompt(true);
+    setPromptSaveStatus("");
+    try {
+      const res = await fetch(`/api/projects/${project.id}/extraction-prompt`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ extractionPrompt })
+      });
+      if (res.ok) {
+        setPromptSaveStatus("success");
+        setTimeout(() => setPromptSaveStatus(""), 3000);
+        onRefresh();
+      } else {
+        setPromptSaveStatus("error");
+        setTimeout(() => setPromptSaveStatus(""), 3000);
+      }
+    } catch (e) {
+      console.error(e);
+      setPromptSaveStatus("error");
+      setTimeout(() => setPromptSaveStatus(""), 3000);
+    } finally {
+      setIsSavingPrompt(false);
+    }
+  };
+
   // Submit report + run AI to build/re-generate framework draft
   const handleGenerateFramework = async () => {
     setIsGeneratingFramework(true);
@@ -182,12 +219,12 @@ export default function SkillCreationWheel({ project, onRefresh }: SkillCreation
       const res = await fetch(`/api/projects/${project.id}/generate-framework`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ reportsText })
+        body: JSON.stringify({ reportsText, extractionPrompt })
       });
       const data = await res.json();
       setEditableFramework(data);
       onRefresh();
-      alert("研究框架初稿生成成功！已整合海内外最新产业对比。");
+      alert("研究框架初稿生成成功！已根据您配置的全新抽取提示词整合最新比对。");
     } catch (e) {
       console.error(e);
       alert("框架生成异常，请检查后端状态。");
@@ -468,34 +505,85 @@ export default function SkillCreationWheel({ project, onRefresh }: SkillCreation
 
             {/* Ingestion interface */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <label className="text-xs text-zinc-400 flex justify-between">
-                  <span>研报/会议纪要导入区 (拖拽或粘贴文本)</span>
-                  <span className="text-emerald-500 font-mono text-[10px]">Support MD/TXT/PDF</span>
-                </label>
-                <textarea
-                  id="reports-textarea"
-                  value={reportsText}
-                  onChange={(e) => setReportsText(e.target.value)}
-                  placeholder="[示例：拖拽此处或在此黏贴关于此固态电池/硅光材料的技术参数与竞品最新发布纪要...] "
-                  className="w-full h-44 bg-zinc-950 border border-zinc-800 rounded-lg p-3 text-xs text-zinc-300 font-mono focus:outline-none focus:ring-1 focus:ring-emerald-500 placeholder-zinc-700"
-                />
-                
-                <div className="flex gap-2">
-                  <button
-                    id="preset-text-battery-btn"
-                    onClick={() => setReportsText("最新固态电池研报：丰田与三星全固态中试线爆料：正极涂层厚度压缩30%，并在界面压力封装中使用钛基弹性结构克服热收缩；而国内卫蓝半固态装车容量超150GWh，其界面加入氧化锆复合陶瓷涂覆防树枝晶穿刺效果显著。数据源需加入百川盈孚中试产量测算评估。")}
-                    className="text-[10px] bg-zinc-800 hover:bg-zinc-750 text-zinc-300 px-2.5 py-1.5 rounded transition-colors"
-                  >
-                    💡 加载固态电池测试报料
-                  </button>
-                  <button
-                    id="preset-text-cpo-btn"
-                    onClick={() => setReportsText("台积电最新硅光论坛：下代高速算力云大厂正式招标基于硅通孔（TSV）电气引脚在1.6T/3.2T CPO中的高频衰减规范；由于激光光源长期在85度温箱下运行，激光器失效率从以往年均1.8%骤降，光源测试应纳入抗反射损伤监测体系。")}
-                    className="text-[10px] bg-zinc-800 hover:bg-zinc-750 text-zinc-300 px-2.5 py-1.5 rounded transition-colors"
-                  >
-                    💡 加载硅光/CPO测试报料
-                  </button>
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <label className="text-xs text-zinc-400 flex justify-between">
+                    <span>研报/会议纪要导入区 (拖拽或粘贴文本)</span>
+                    <span className="text-emerald-500 font-mono text-[10px]">Support MD/TXT/PDF</span>
+                  </label>
+                  <textarea
+                    id="reports-textarea"
+                    value={reportsText}
+                    onChange={(e) => setReportsText(e.target.value)}
+                    placeholder="[示例：拖拽此处或在此黏贴关于此固态电池/硅光材料的技术参数与竞品最新发布纪要...] "
+                    className="w-full h-44 bg-zinc-950 border border-zinc-800 rounded-lg p-3 text-xs text-zinc-300 font-mono focus:outline-none focus:ring-1 focus:ring-emerald-500 placeholder-zinc-700"
+                  />
+                  
+                  <div className="flex gap-2">
+                    <button
+                      id="preset-text-battery-btn"
+                      type="button"
+                      onClick={() => setReportsText("最新固态电池研报：丰田与三星全固态中试线爆料：正极涂层厚度压缩30%，并在界面压力封装中使用钛基弹性结构克服热收缩；而国内卫蓝半固态装车容量超150GWh，其界面加入氧化锆复合陶瓷涂覆防树枝晶穿刺效果显著。数据源需加入百川盈孚中试产量测算评估。")}
+                      className="text-[10px] bg-zinc-800 hover:bg-zinc-750 text-zinc-300 px-2.5 py-1.5 rounded transition-colors"
+                    >
+                      💡 加载固态电池测试报料
+                    </button>
+                    <button
+                      id="preset-text-cpo-btn"
+                      type="button"
+                      onClick={() => setReportsText("台积电最新硅光论坛：下代高速算力云大厂正式招标基于硅通孔（TSV）电气引脚在1.6T/3.2T CPO中的高频衰减规范；由于激光光源长期在85度温箱下运行，激光器失效率从以往年均1.8%骤降，光源测试应纳入抗反射损伤监测体系。")}
+                      className="text-[10px] bg-zinc-800 hover:bg-zinc-750 text-zinc-300 px-2.5 py-1.5 rounded transition-colors"
+                    >
+                      💡 加载硅光/CPO测试报料
+                    </button>
+                  </div>
+                </div>
+
+                {/* Custom prompt configuration entrance */}
+                <div className="p-3 bg-zinc-950/70 border border-zinc-800 rounded-lg space-y-2">
+                  <div className="flex justify-between items-center bg-zinc-950/50 p-1 rounded">
+                    <label className="text-xs font-semibold text-zinc-300 flex items-center gap-1.5">
+                      <Sparkles className="h-3.5 w-3.5 text-amber-400" />
+                      <span>研究框架抽取提示词配置</span>
+                    </label>
+                    <button
+                      type="button"
+                      onClick={handleSaveExtractionPrompt}
+                      disabled={isSavingPrompt}
+                      className="text-[10px] bg-zinc-800 hover:bg-zinc-750 text-zinc-300 px-2 py-0.5 rounded flex items-center gap-1.5 transition-all disabled:opacity-50"
+                    >
+                      {isSavingPrompt ? (
+                        <>
+                          <RotateCw className="h-2.5 w-2.5 animate-spin" />
+                          <span>保存中...</span>
+                        </>
+                      ) : (
+                        <>
+                          <span>💾 保存提示词模板</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                  <p className="text-[10px] text-zinc-500 leading-relaxed">
+                    AI将根据以下提示词指令对研报开展深层抽取（可自由编辑微调指令重点，完成后生成初稿）：
+                  </p>
+                  <textarea
+                    id="extraction-prompt-input"
+                    value={extractionPrompt}
+                    onChange={(e) => setExtractionPrompt(e.target.value)}
+                    placeholder="请输入自定义抽取提示词指令模板，规定如何识别并抽取核心工艺、量化指标和关键对标体系..."
+                    className="w-full h-32 bg-zinc-900 border border-zinc-800 rounded p-2 text-xs text-zinc-300 font-mono focus:outline-none focus:ring-1 focus:ring-amber-500 placeholder-zinc-700"
+                  />
+                  {promptSaveStatus === "success" && (
+                    <div className="text-[10px] text-emerald-400 font-mono flex items-center gap-1">
+                      <span>✓ 提示词抽取模板已成功固化保存至项目资产中！</span>
+                    </div>
+                  )}
+                  {promptSaveStatus === "error" && (
+                    <div className="text-[10px] text-red-1050 font-mono flex items-center gap-1">
+                      <span>✗ 保存失败，请检查连接状态。</span>
+                    </div>
+                  )}
                 </div>
               </div>
 

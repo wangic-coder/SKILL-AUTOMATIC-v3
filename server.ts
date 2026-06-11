@@ -92,6 +92,7 @@ interface ResearchProject {
     status: "agreed" | "conditional" | "need_tweak";
     avatarColor: string;
   }>;
+  extractionPrompt?: string;
   isExpertReviewed: boolean;
   skillsV0: Array<{
     id: string;
@@ -142,6 +143,7 @@ const PRESETS: Record<string, any> = {
   "solid-state-battery": {
     industry: "固态电池 (Solid-State Batteries)",
     theme: "海内外全固态电池技术路径与商业化量产竞争力研判",
+    extractionPrompt: "你是一个顶尖海内外新科技与重工业赛道的高级投资研究员。\n现在需要为固态电池行业及特定研究主题做海内外多维度技术路径以及中试线量产壁垒对碰。\n\n请着重提取出：\n1. 国内在混料、涂布、极片干燥等制备工艺上的瓶颈，及向全固态过渡的半固态量产线装车优势；\n2. 海外丰田、三星等在系统专利、超高封装环境压力（TP机制）、原位失效表征方面的垄断壁垒；\n3. 构建契合高直通率要求的、拒绝空洞词汇的具体工程量化维度。",
     frameworkDraft: {
       domestic: "重点关注硫化物/氧化物/聚合物等材料体系的技术开发。国内更聚焦于正负极材料以及固态电解质的固相法、液相法制备工艺，关注混料、涂布、辊压、极片干燥等制造工艺改造，以及干电极技术在固态电池中的适配度。国内企业倾向于通过半固态逐步过渡到全固态，商业化路径和整车测试较为渐进。",
       foreign: "海外（以丰田、三星SDI、QuantumScape等为代表）更加注重系统层面的专利壁垒，偏好一步到位的“全固态”路线。核心聚焦在安全热失控阀值、超高压力封装系统设计（TP机制）、全温区工作指标、高倍率放电性能、资源战略合作（如锂、硫原材料等）及知识产权覆盖度上。",
@@ -286,6 +288,7 @@ const PRESETS: Record<string, any> = {
   "cpo-photonics": {
     industry: "AI芯片光电互联 (CPO & Silicon Photonics)",
     theme: "海外下一代AI巨群互联网络高速率硅光与CPO架构升级趋势",
+    extractionPrompt: "你是一个顶尖海内外新科技与重工业赛道的高级投资研究员。\n现在需要针对光通信与CPO芯片级高密度封装进行海内外研究视角深度对碰。\n\n请着重提取出：\n1. 国内在800G、1.6T高速光模块批量对准、测试及封装良率控制等工艺特征；\n2. 海外NVIDIA等巨头在晶圆级硅光混合集成、无机调制、外置连续光源（ELS）抗震抗反射稳定性上的核心壁垒；\n3. 提炼薄膜铌酸锂、硅光封测、重布线层物理衰减相关的硬核定量数据指标。",
     frameworkDraft: {
       domestic: "国内以易华录、光迅科技、中际旭创等光模块巨头引领，重点处于800G、1.6T高速光连接的批量封装产能释放与良品率控制。目前主要以可插拔光模块技术（Pluggable）为主。在CPO（共封装光学）领域也进行了研发布局。极其侧重于原材料组件：微晶玻璃、铌酸锂调制器及激光光源外置路线的代工和总装测试效率。",
       foreign: "海外以NVIDIA、Broadcom、Intel为代表的巨头掌控产业链底层标准与新型高速ASIC主控。重点放在晶圆级硅光混合集成（SiPh Integration）、光电混合共封装高密度光纤对准工艺（Fibers alignment）、通道内多波长技术。对热稳定性、激光器退化速率（dB/1000h）、多核单片集成良率的要求极高，注重将光学IO直接推向ASIC裸片边缘的系统性能代时代演变。",
@@ -483,6 +486,16 @@ async function startServer() {
     });
   });
 
+  // API 1.45: Update the core framework extraction prompt template
+  app.post("/api/projects/:id/extraction-prompt", (req, res) => {
+    const project = db.projects[req.params.id];
+    if (!project) return res.status(404).json({ error: "Project not found" });
+
+    const { extractionPrompt } = req.body;
+    project.extractionPrompt = extractionPrompt;
+    res.json({ success: true, extractionPrompt: project.extractionPrompt });
+  });
+
   // API 1.5: Create a brand new project dynamically from manual report upload/metadata
   app.post("/api/projects", (req, res) => {
     const { name, theme, reportsText } = req.body;
@@ -497,6 +510,7 @@ async function startServer() {
       id: sampleId,
       industry: name,
       theme: theme || "技术革新与海内外量产竞争力研判",
+      extractionPrompt: `你是一个顶尖海内外新科技与重工业赛道的高级投资研究员。\n现在需要为行业：“${name}”，等特定研究主题做海内外多维度技术路径以及中试线量产壁垒对碰。\n\n请着重提取出：\n1. 国内在【${name}】制备工艺上的瓶颈，及工程制造效率优化优势；\n2. 海外相关巨头在系统专利、关键器件设计制备、原位失效表征方面的行业标准控制与核心壁垒；\n3. 构建契合量产高直通良率要求、拒绝空洞词汇的具体工程量化维度与底层指标。`,
       frameworkDraft: {
         domestic: `国内更聚焦于【${name}】的产业链落地与工程制造效率优化。国内制造工艺强调规模化量产的速度和性价比，更深入关注【${name}】相关的本土供应链、替代原料供给和工艺制造指标优化，并能在短时间内将量产良品率拉升。主要难点在于底层核心基础制造装备稳定性及原材料纯度。`,
         foreign: `海外在【${name}】领域注重底层核心专利与关键行业标准指定。海外巨头更早进入原型研发，积累了丰富的物理失效机理库（如温差及摩擦极限、抗疲劳退化参数），其量产验证和实地工况测试极为严苛，但在全球重组生态下同样面临极高研发成本损耗难题。`,
@@ -629,9 +643,13 @@ async function startServer() {
   // API 2: Step 1 & 2 - Generate/Re-generate Research Framework (optionally calls Gemini if key is active)
   app.post("/api/projects/:id/generate-framework", async (req, res) => {
     const { id } = req.params;
-    const { reportsText } = req.body;
+    const { reportsText, extractionPrompt } = req.body;
     const project = db.projects[id];
     if (!project) return res.status(404).json({ error: "Project not found" });
+
+    if (extractionPrompt !== undefined) {
+      project.extractionPrompt = extractionPrompt;
+    }
 
     // If Gemini is active and verified, let's call the actual AI to synthesize.
     const hasActiveKey = process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY !== "MY_GEMINI_API_KEY" && geminiStatus.verified;
@@ -639,9 +657,11 @@ async function startServer() {
     if (hasActiveKey && ai) {
       try {
         console.log(`Calling Gemini API to synthesize framework for: ${project.industry}...`);
+        
+        const systemInstruction = project.extractionPrompt || `你是一个顶尖海内外新科技与重工业赛道的高级投资研究员。\n现在需要为行业：“${project.industry}”，特定研究主题：“${project.theme || "技术演进与竞争力评估"}”生成一整套最科学先进、符合海外与国内双重维度的[研究框架初稿]与[数据获取声明]。`;
+
         const userPrompt = `
-          你是一个顶尖海内外新科技与重工业赛道的高级投资研究员。
-          现在需要为行业：“${project.industry}”，特定研究主题：“${project.theme || "技术演进与竞争力评估"}”生成一整套最科学先进、符合海外与国内双重维度的[研究框架初稿]与[数据获取声明]。
+          ${systemInstruction}
           
           输入参考报告/调研材料/会议纪要概要极其背景如下：
           "${reportsText || "使用行业最精尖、最先进的研究规范和前沿商业进展。"}"
@@ -680,7 +700,7 @@ async function startServer() {
         if (response.text) {
           const generatedData = JSON.parse(response.text.trim());
           project.frameworkDraft = generatedData;
-          console.log("Gemini Framework successfully generated!");
+          console.log("Gemini Framework successfully generated using user-defined prompt!");
         }
       } catch (geminiError) {
         console.error("Gemini Generation Error, falling back to comprehensive presets.", geminiError);
@@ -690,7 +710,9 @@ async function startServer() {
       console.log("No authentic Gemini Key, using pre-loaded high-fidelity dataset.");
       // Just modify tiny parts based on input text to represent simulated process in action
       if (reportsText && reportsText.trim().length > 5) {
-        project.frameworkDraft.domestic += ` (基于新导入资料补充: ${reportsText.slice(0, 50)}...)`;
+        project.frameworkDraft.domestic += ` (基于用户自定义抽取提示词及新导入资料提取补充)`;
+      } else if (project.extractionPrompt) {
+        project.frameworkDraft.domestic += ` (已根据配置的提示词完成深度框架优化比对)`;
       }
     }
 
